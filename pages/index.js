@@ -31,6 +31,7 @@ export default function Home() {
           </h1>
 
           <p className="text-3xl text-slate-200 font-semibold">The Truth, Verified. No Clickbait.</p>
+          <p className="text-lg text-slate-400 mt-2">Resonating with what matters.</p>
 
           <p className="text-lg text-slate-400 max-w-2xl mx-auto">
             Decoded facts from verified sources. History • Geography • Math. No sensationalism. Just truth.
