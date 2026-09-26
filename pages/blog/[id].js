@@ -157,7 +157,7 @@ export default function BlogArticle({ fact, image }) {
             <img
               src={image.imageUrl}
               alt={fact_title}
-              className="w-full rounded-xl border border-slate-800"
+              className="w-full h-64 md:h-80 object-cover rounded-xl border border-slate-800"
             />
             <figcaption className="text-xs text-slate-500 mt-2">
               Image from Wikipedia:{' '}
