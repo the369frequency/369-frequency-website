@@ -1,18 +1,78 @@
 // pages/blog/[id].js
 //
 // Public blog article page for The 369 Frequency.
-// Fetches a single `truth_vault` row from Supabase by `id` (from the URL)
-// and renders it in the site's dark / cyan-blue-purple visual style.
+// Fetches a single `truth_vault` row from Supabase by `id` (from the URL),
+// pulls a topically-relevant, properly-licensed image from Wikimedia Commons,
+// and renders it all in the site's dark / cyan-blue-purple visual style.
 //
 // SETUP:
 // 1. Save this file as: pages/blog/[id].js  (inside the 369-frequency-website repo)
-// 2. No new npm packages needed — it uses a plain fetch() call to Supabase's
-//    REST API, so nothing extra to install or configure on Vercel.
-// 3. Uses the public/publishable Supabase key, which is safe to have in
-//    client-visible code (same key already used elsewhere for this project).
+// 2. No new npm packages needed — everything uses plain fetch() calls.
+// 3. Uses the public/publishable Supabase key, safe for client-visible code.
+//
+// IMAGE SOURCING: Wikimedia Commons only hosts images that are public domain
+// or explicitly licensed for reuse (with attribution), so this avoids the
+// copyright risk of re-hosting a photo taken directly from a news article.
+// Each image is shown with a small credit line + link back to its Commons
+// file page, which shows the exact license. If no good match is found, the
+// article renders normally without a hero image (never a broken image).
 
 const SUPABASE_URL = 'https://pmqybasqdekytoypctay.supabase.co'
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_iLSTM2jlAwx7lg7Qy1hhmQ_0Rd5tsxw'
+
+// Step 1: use Wikipedia's own search to find the best-matching article for
+// a topic (much better relevance than a raw Commons file-description search,
+// since it matches on article content, not just file names/captions).
+async function findWikipediaTitle(query) {
+  try {
+    const searchUrl =
+      'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*' +
+      '&srlimit=1&srsearch=' +
+      encodeURIComponent(query)
+
+    const res = await fetch(searchUrl)
+    if (!res.ok) return null
+
+    const data = await res.json()
+    const hit = data?.query?.search?.[0]
+    return hit?.title || null
+  } catch (err) {
+    return null
+  }
+}
+
+// Step 2: fetch that Wikipedia article's lead image via the REST summary API.
+// Wikipedia's own images are drawn from Wikimedia Commons, so they carry the
+// same public-domain / reuse-with-attribution guarantees.
+async function fetchWikipediaImage(title) {
+  try {
+    const summaryUrl =
+      'https://en.wikipedia.org/api/rest_v1/page/summary/' +
+      encodeURIComponent(title)
+
+    const res = await fetch(summaryUrl)
+    if (!res.ok) return null
+
+    const data = await res.json()
+    const imageUrl = data?.originalimage?.source || data?.thumbnail?.source
+    if (!imageUrl) return null
+
+    return {
+      imageUrl,
+      pageUrl: data?.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+      artist: title,
+      license: 'via Wikipedia',
+    }
+  } catch (err) {
+    return null
+  }
+}
+
+async function fetchTopicImage(query) {
+  const title = await findWikipediaTitle(query)
+  if (!title) return null
+  return fetchWikipediaImage(title)
+}
 
 export async function getServerSideProps({ params }) {
   const { id } = params
@@ -37,17 +97,25 @@ export async function getServerSideProps({ params }) {
     return { notFound: true }
   }
 
+  const fact = rows[0]
+
+  // Try a search using the fact title first (most specific), then fall back
+  // to the category if that finds nothing.
+  const image =
+    (await fetchTopicImage(fact.fact_title)) ||
+    (fact.category ? await fetchTopicImage(fact.category) : null)
+
   return {
     props: {
-      fact: rows[0],
+      fact,
+      image: image || null,
     },
   }
 }
 
-export default function BlogArticle({ fact }) {
+export default function BlogArticle({ fact, image }) {
   const { fact_title, blog_article, category, source_url } = fact
 
-  // Split the article body into paragraphs for readable rendering.
   const paragraphs = (blog_article || '')
     .split(/\n+/)
     .map((p) => p.trim())
@@ -55,8 +123,7 @@ export default function BlogArticle({ fact }) {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
-      {/* Header / nav — replace this block with your shared <Header /> component
-          if one already exists in this repo (e.g. components/Header.js) */}
+      {/* Header / nav — replace with your shared <Header /> component if one exists */}
       <header className="border-b border-slate-800">
         <nav className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <a
@@ -66,10 +133,10 @@ export default function BlogArticle({ fact }) {
             The 369 Frequency
           </a>
           <a
-            href="/"
+            href="/blog"
             className="text-sm text-slate-400 hover:text-cyan-400 transition-colors"
           >
-            ← Back to home
+            ← Back to blog
           </a>
         </nav>
       </header>
@@ -81,9 +148,30 @@ export default function BlogArticle({ fact }) {
           </span>
         )}
 
-        <h1 className="text-3xl md:text-4xl font-bold mb-8 leading-tight">
+        <h1 className="text-3xl md:text-4xl font-bold mb-6 leading-tight">
           {fact_title}
         </h1>
+
+        {image && (
+          <figure className="mb-8">
+            <img
+              src={image.imageUrl}
+              alt={fact_title}
+              className="w-full rounded-xl border border-slate-800"
+            />
+            <figcaption className="text-xs text-slate-500 mt-2">
+              Image from Wikipedia:{' '}
+              <a
+                href={image.pageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-cyan-400"
+              >
+                {image.artist}
+              </a>
+            </figcaption>
+          </figure>
+        )}
 
         <article className="space-y-5 text-slate-300 text-lg leading-relaxed">
           {paragraphs.length > 0 ? (
@@ -110,8 +198,7 @@ export default function BlogArticle({ fact }) {
         )}
       </main>
 
-      {/* Footer — replace this block with your shared <Footer /> component
-          if one already exists in this repo (e.g. components/Footer.js) */}
+      {/* Footer — replace with your shared <Footer /> component if one exists */}
       <footer className="border-t border-slate-800 mt-12">
         <div className="max-w-3xl mx-auto px-6 py-8 text-center text-sm text-slate-500">
           The Truth, Verified. No Clickbait. Resonating with what matters.
